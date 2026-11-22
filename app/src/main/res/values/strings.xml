@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">RR Reminder</string>
+    <string name="tagline">Your Time. Your Tasks. Your Personal Companion.</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_calendar">Calendar</string>
+    <string name="nav_tools">Tools</string>
+    <string name="nav_design">Design</string>
+    <string name="nav_settings">Settings</string>
+    <string name="sign_in_google">Sign in with Google</string>
+</resources>

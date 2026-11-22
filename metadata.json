@@ -1,0 +1,6 @@
+{
+  "name": "RR Reminder",
+  "description": "Customizable personal productivity suite for smart reminders, alarms, calendar, weather, world clock, tasks, habits, notes, and theme design.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

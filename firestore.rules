@@ -1,0 +1,281 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isValidBackupSummary(data) {
+      return data.userId == request.auth.uid &&
+             data.displayName is string && data.displayName.size() <= 120 &&
+             (!('deviceName' in data) || (data.deviceName is string && data.deviceName.size() <= 120)) &&
+             data.totalItems is int && data.totalItems >= 0 && data.totalItems <= 100000 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidReminder(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+             data.triggerAtMillis is int && data.triggerAtMillis >= 0 &&
+             data.repeatType in ['NONE', 'DAILY', 'WEEKLY', 'MONTHLY'] &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             (!('locationName' in data) || (data.locationName is string && data.locationName.size() <= 200)) &&
+             (!('latitude' in data) || data.latitude is number) &&
+             (!('longitude' in data) || data.longitude is number) &&
+             (!('radiusMeters' in data) || (data.radiusMeters is int && data.radiusMeters >= 50 && data.radiusMeters <= 10000)) &&
+             data.completed is bool &&
+             data.priority in ['LOW', 'MEDIUM', 'HIGH'] &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidEvent(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+             data.startMillis is int && data.startMillis >= 0 &&
+             data.endMillis is int && data.endMillis >= data.startMillis &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.allDay is bool &&
+             data.recurrence is string && data.recurrence.size() >= 1 && data.recurrence.size() <= 40 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTask(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 2000)) &&
+             data.priority in ['LOW', 'MEDIUM', 'HIGH'] &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             (!('dueDateMillis' in data) || data.dueDateMillis is int) &&
+             data.completed is bool &&
+             data.recurrence is string && data.recurrence.size() >= 1 && data.recurrence.size() <= 40 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAlarm(data) {
+      return data.userId == request.auth.uid &&
+             data.hour is int && data.hour >= 0 && data.hour <= 23 &&
+             data.minute is int && data.minute >= 0 && data.minute <= 59 &&
+             data.label is string && data.label.size() <= 120 &&
+             data.repeatDaysMask is int && data.repeatDaysMask >= 0 && data.repeatDaysMask <= 127 &&
+             data.enabled is bool &&
+             data.vibrate is bool &&
+             data.snoozeMinutes is int && data.snoozeMinutes >= 1 && data.snoozeMinutes <= 60 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidBirthday(data) {
+      return data.userId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 150 &&
+             data.month is int && data.month >= 1 && data.month <= 12 &&
+             data.day is int && data.day >= 1 && data.day <= 31 &&
+             (!('birthYear' in data) || (data.birthYear is int && data.birthYear >= 1900 && data.birthYear <= 2100)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000)) &&
+             data.advanceDays is int && data.advanceDays >= 0 && data.advanceDays <= 30 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidNote(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 300 &&
+             data.content is string && data.content.size() <= 20000 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.pinned is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidGoal(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+             data.targetCount is int && data.targetCount >= 1 && data.targetCount <= 100000 &&
+             data.currentCount is int && data.currentCount >= 0 && data.currentCount <= 100000 &&
+             data.unit is string && data.unit.size() >= 1 && data.unit.size() <= 40 &&
+             data.completed is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidHabit(data) {
+      return data.userId == request.auth.uid &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 150 &&
+             data.category is string && data.category.size() >= 1 && data.category.size() <= 60 &&
+             data.streak is int && data.streak >= 0 && data.streak <= 50000 &&
+             data.bestStreak is int && data.bestStreak >= 0 && data.bestStreak <= 50000 &&
+             data.historyDatesCsv is string && data.historyDatesCsv.size() <= 20000 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) && isValidId(userId) &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'totalItems', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['userId', 'displayName', 'deviceName', 'totalItems', 'createdAt', 'updatedAt']) &&
+                       isValidBackupSummary(incoming());
+
+      allow update: if isOwner(userId) && isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       isValidBackupSummary(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'deviceName', 'totalItems', 'updatedAt']);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /reminders/{reminderId} {
+        allow get: if isOwner(userId) && isValidId(reminderId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(reminderId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'triggerAtMillis', 'repeatType', 'category', 'completed', 'priority', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'notes', 'triggerAtMillis', 'repeatType', 'category', 'locationName', 'latitude', 'longitude', 'radiusMeters', 'completed', 'priority', 'createdAt', 'updatedAt']) &&
+                         isValidReminder(incoming());
+        allow update: if isOwner(userId) && isValidId(reminderId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidReminder(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'notes', 'triggerAtMillis', 'repeatType', 'category', 'locationName', 'latitude', 'longitude', 'radiusMeters', 'completed', 'priority', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(reminderId);
+      }
+
+      match /events/{eventId} {
+        allow get: if isOwner(userId) && isValidId(eventId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(eventId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'startMillis', 'endMillis', 'category', 'allDay', 'recurrence', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'description', 'startMillis', 'endMillis', 'category', 'allDay', 'recurrence', 'createdAt', 'updatedAt']) &&
+                         isValidEvent(incoming());
+        allow update: if isOwner(userId) && isValidId(eventId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidEvent(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'startMillis', 'endMillis', 'category', 'allDay', 'recurrence', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(eventId);
+      }
+
+      match /tasks/{taskId} {
+        allow get: if isOwner(userId) && isValidId(taskId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(taskId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'priority', 'category', 'completed', 'recurrence', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'description', 'priority', 'category', 'dueDateMillis', 'completed', 'recurrence', 'createdAt', 'updatedAt']) &&
+                         isValidTask(incoming());
+        allow update: if isOwner(userId) && isValidId(taskId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidTask(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'priority', 'category', 'dueDateMillis', 'completed', 'recurrence', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+
+      match /alarms/{alarmId} {
+        allow get: if isOwner(userId) && isValidId(alarmId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(alarmId) &&
+                         incoming().keys().hasAll(['userId', 'hour', 'minute', 'label', 'repeatDaysMask', 'enabled', 'vibrate', 'snoozeMinutes', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'hour', 'minute', 'label', 'repeatDaysMask', 'enabled', 'vibrate', 'snoozeMinutes', 'createdAt', 'updatedAt']) &&
+                         isValidAlarm(incoming());
+        allow update: if isOwner(userId) && isValidId(alarmId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidAlarm(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['hour', 'minute', 'label', 'repeatDaysMask', 'enabled', 'vibrate', 'snoozeMinutes', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(alarmId);
+      }
+
+      match /birthdays/{birthdayId} {
+        allow get: if isOwner(userId) && isValidId(birthdayId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(birthdayId) &&
+                         incoming().keys().hasAll(['userId', 'name', 'month', 'day', 'advanceDays', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'name', 'month', 'day', 'birthYear', 'notes', 'advanceDays', 'createdAt', 'updatedAt']) &&
+                         isValidBirthday(incoming());
+        allow update: if isOwner(userId) && isValidId(birthdayId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidBirthday(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'month', 'day', 'birthYear', 'notes', 'advanceDays', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(birthdayId);
+      }
+
+      match /notes/{noteId} {
+        allow get: if isOwner(userId) && isValidId(noteId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(noteId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'content', 'category', 'pinned', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'content', 'category', 'pinned', 'createdAt', 'updatedAt']) &&
+                         isValidNote(incoming());
+        allow update: if isOwner(userId) && isValidId(noteId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidNote(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'content', 'category', 'pinned', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(noteId);
+      }
+
+      match /goals/{goalId} {
+        allow get: if isOwner(userId) && isValidId(goalId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(goalId) &&
+                         incoming().keys().hasAll(['userId', 'title', 'targetCount', 'currentCount', 'unit', 'completed', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'title', 'targetCount', 'currentCount', 'unit', 'completed', 'createdAt', 'updatedAt']) &&
+                         isValidGoal(incoming());
+        allow update: if isOwner(userId) && isValidId(goalId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidGoal(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['title', 'targetCount', 'currentCount', 'unit', 'completed', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(goalId);
+      }
+
+      match /habits/{habitId} {
+        allow get: if isOwner(userId) && isValidId(habitId);
+        allow list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(habitId) &&
+                         incoming().keys().hasAll(['userId', 'name', 'category', 'streak', 'bestStreak', 'historyDatesCsv', 'createdAt', 'updatedAt']) &&
+                         incoming().keys().hasOnly(['userId', 'name', 'category', 'streak', 'bestStreak', 'historyDatesCsv', 'createdAt', 'updatedAt']) &&
+                         isValidHabit(incoming());
+        allow update: if isOwner(userId) && isValidId(habitId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         isValidHabit(incoming()) &&
+                         incoming().diff(existing()).affectedKeys().hasOnly(['name', 'category', 'streak', 'bestStreak', 'historyDatesCsv', 'updatedAt']);
+        allow delete: if isOwner(userId) && isValidId(habitId);
+      }
+    }
+  }
+}

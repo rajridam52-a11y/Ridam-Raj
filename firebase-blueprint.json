@@ -1,0 +1,196 @@
+{
+  "entities": {
+    "UserBackupSummary": {
+      "title": "UserBackupSummary",
+      "description": "Metadata about the authenticated user's cloud backup.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "displayName": { "type": "string", "description": "User display name." },
+        "deviceName": { "type": "string", "description": "Device model used for last sync." },
+        "totalItems": { "type": "integer", "description": "Total synced records across collections." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp." }
+      },
+      "required": ["userId", "displayName", "totalItems", "createdAt", "updatedAt"]
+    },
+    "CloudReminder": {
+      "title": "CloudReminder",
+      "description": "User reminder synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "notes": { "type": "string" },
+        "triggerAtMillis": { "type": "integer" },
+        "repeatType": { "type": "string", "enum": ["NONE", "DAILY", "WEEKLY", "MONTHLY"] },
+        "category": { "type": "string" },
+        "locationName": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "radiusMeters": { "type": "integer" },
+        "completed": { "type": "boolean" },
+        "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "triggerAtMillis", "repeatType", "category", "completed", "priority", "createdAt", "updatedAt"]
+    },
+    "CloudCalendarEvent": {
+      "title": "CloudCalendarEvent",
+      "description": "User calendar event synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "startMillis": { "type": "integer" },
+        "endMillis": { "type": "integer" },
+        "category": { "type": "string" },
+        "allDay": { "type": "boolean" },
+        "recurrence": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "startMillis", "endMillis", "category", "allDay", "recurrence", "createdAt", "updatedAt"]
+    },
+    "CloudTask": {
+      "title": "CloudTask",
+      "description": "User task synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH"] },
+        "category": { "type": "string" },
+        "dueDateMillis": { "type": "integer" },
+        "completed": { "type": "boolean" },
+        "recurrence": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "priority", "category", "completed", "recurrence", "createdAt", "updatedAt"]
+    },
+    "CloudAlarm": {
+      "title": "CloudAlarm",
+      "description": "User alarm synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "hour": { "type": "integer" },
+        "minute": { "type": "integer" },
+        "label": { "type": "string" },
+        "repeatDaysMask": { "type": "integer" },
+        "enabled": { "type": "boolean" },
+        "vibrate": { "type": "boolean" },
+        "snoozeMinutes": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "hour", "minute", "label", "repeatDaysMask", "enabled", "vibrate", "snoozeMinutes", "createdAt", "updatedAt"]
+    },
+    "CloudBirthday": {
+      "title": "CloudBirthday",
+      "description": "User birthday reminder synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "month": { "type": "integer" },
+        "day": { "type": "integer" },
+        "birthYear": { "type": "integer" },
+        "notes": { "type": "string" },
+        "advanceDays": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "month", "day", "advanceDays", "createdAt", "updatedAt"]
+    },
+    "CloudNote": {
+      "title": "CloudNote",
+      "description": "User quick note synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "content": { "type": "string" },
+        "category": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "content", "category", "pinned", "createdAt", "updatedAt"]
+    },
+    "CloudGoal": {
+      "title": "CloudGoal",
+      "description": "User daily goal synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "targetCount": { "type": "integer" },
+        "currentCount": { "type": "integer" },
+        "unit": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "targetCount", "currentCount", "unit", "completed", "createdAt", "updatedAt"]
+    },
+    "CloudHabit": {
+      "title": "CloudHabit",
+      "description": "User habit tracker item synced to Firestore.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "streak": { "type": "integer" },
+        "bestStreak": { "type": "integer" },
+        "historyDatesCsv": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "category", "streak", "bestStreak", "historyDatesCsv", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserBackupSummary" },
+      "description": "Authenticated user's cloud backup summary and last sync metadata."
+    },
+    "/users/{userId}/reminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/CloudReminder" },
+      "description": "User-scoped reminders."
+    },
+    "/users/{userId}/events/{eventId}": {
+      "schema": { "$ref": "#/entities/CloudCalendarEvent" },
+      "description": "User-scoped calendar events."
+    },
+    "/users/{userId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/CloudTask" },
+      "description": "User-scoped tasks."
+    },
+    "/users/{userId}/alarms/{alarmId}": {
+      "schema": { "$ref": "#/entities/CloudAlarm" },
+      "description": "User-scoped alarms."
+    },
+    "/users/{userId}/birthdays/{birthdayId}": {
+      "schema": { "$ref": "#/entities/CloudBirthday" },
+      "description": "User-scoped birthdays."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/CloudNote" },
+      "description": "User-scoped notes."
+    },
+    "/users/{userId}/goals/{goalId}": {
+      "schema": { "$ref": "#/entities/CloudGoal" },
+      "description": "User-scoped daily goals."
+    },
+    "/users/{userId}/habits/{habitId}": {
+      "schema": { "$ref": "#/entities/CloudHabit" },
+      "description": "User-scoped habits."
+    }
+  }
+}
