@@ -77,6 +77,16 @@ data class DesignSettings(
     val hiddenCards: Set<String> = emptySet()
 )
 
+data class CustomRingtoneItem(
+    val id: String,
+    val name: String,
+    val artist: String = "",
+    val uriString: String,
+    val durationMs: Long = 0L,
+    val sourceType: String = "SONG",
+    val addedAtMillis: Long = System.currentTimeMillis()
+)
+
 data class AppUserPreferences(
     val design: DesignSettings = DesignSettings(),
     val use24HourClock: Boolean = false,
@@ -89,7 +99,10 @@ data class AppUserPreferences(
     val offlineModePreferred: Boolean = false,
     val autoCloudSync: Boolean = true,
     val lastCloudBackupMillis: Long = 0L,
-    val weatherCityName: String = "San Francisco",
-    val weatherLat: Double = 37.7749,
-    val weatherLon: Double = -122.4194
+    val weatherCityName: String = "New Delhi",
+    val weatherLat: Double = 28.6139,
+    val weatherLon: Double = 77.2090,
+    val defaultRingtoneName: String = "System Default Alarm",
+    val defaultRingtoneUri: String? = null,
+    val savedRingtones: List<CustomRingtoneItem> = emptyList()
 )

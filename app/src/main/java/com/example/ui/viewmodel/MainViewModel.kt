@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -33,6 +34,7 @@ import com.example.data.local.SpeedTestResultEntity
 import com.example.data.local.TaskEntity
 import com.example.data.local.WorldCityEntity
 import com.example.data.prefs.AppUserPreferences
+import com.example.data.prefs.CustomRingtoneItem
 import com.example.data.prefs.DesignSettings
 import com.example.data.prefs.PreferencesManager
 import com.example.data.remote.GeocodingResultDto
@@ -41,6 +43,9 @@ import com.example.security.SecurityManager
 import com.example.system.BatteryMonitor
 import com.example.system.BatteryStatusInfo
 import com.example.system.NotificationChannels
+import com.example.system.PreviewAudioState
+import com.example.system.RingtoneAudioController
+import com.example.system.RingingState
 import com.example.system.SpeedTestRunner
 import com.example.system.SystemSchedulers
 import com.example.system.VoiceNoteRecorder
@@ -48,6 +53,7 @@ import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -154,6 +160,9 @@ class MainViewModel(
 
     private val _snackbarEvents = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val snackbarEvents: SharedFlow<String> = _snackbarEvents.asSharedFlow()
+
+    val previewAudioState: StateFlow<PreviewAudioState> = RingtoneAudioController.previewState
+    val ringingState: StateFlow<RingingState?> = RingtoneAudioController.ringingState
 
     private var stopwatchBaseElapsed = 0L
     private var stopwatchStartRealtime = 0L
@@ -462,6 +471,102 @@ class MainViewModel(
         viewModelScope.launch { prefsManager.setNotificationReader(enabled) }
     }
 
+    // --- Custom Song Ringtones ---
+    fun importSongRingtone(
+        uri: Uri,
+        setAsDefault: Boolean = false,
+        onImported: ((CustomRingtoneItem) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            RingtoneAudioController.importSongFromUri(appContext, uri)
+                .onSuccess { item ->
+                    prefsManager.addSavedRingtone(item)
+                    if (setAsDefault) {
+                        prefsManager.setDefaultRingtone(item.name, item.uriString)
+                        _snackbarEvents.tryEmit("Default ringtone set to ♪ ${item.name}")
+                    } else {
+                        _snackbarEvents.tryEmit("Added song: ♪ ${item.name}")
+                    }
+                    viewModelScope.launch(Dispatchers.Main) {
+                        onImported?.invoke(item)
+                    }
+                }
+                .onFailure { err ->
+                    _snackbarEvents.tryEmit(err.localizedMessage ?: "Failed to import song.")
+                }
+        }
+    }
+
+    fun addSystemRingtone(
+        uri: Uri?,
+        setAsDefault: Boolean = false,
+        onAdded: ((CustomRingtoneItem) -> Unit)? = null
+    ) {
+        if (uri == null) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val item = RingtoneAudioController.resolveSystemRingtone(appContext, uri)
+            if (item != null) {
+                prefsManager.addSavedRingtone(item)
+                if (setAsDefault) {
+                    prefsManager.setDefaultRingtone(item.name, item.uriString)
+                    _snackbarEvents.tryEmit("Default ringtone set to ♪ ${item.name}")
+                } else {
+                    _snackbarEvents.tryEmit("Added ringtone: ♪ ${item.name}")
+                }
+                viewModelScope.launch(Dispatchers.Main) {
+                    onAdded?.invoke(item)
+                }
+            } else {
+                _snackbarEvents.tryEmit("Unable to read selected system ringtone.")
+            }
+        }
+    }
+
+    fun setDefaultRingtone(name: String, uri: String?) {
+        viewModelScope.launch {
+            prefsManager.setDefaultRingtone(name, uri)
+            _snackbarEvents.tryEmit("Default ringtone: $name")
+        }
+    }
+
+    fun deleteSavedRingtone(item: CustomRingtoneItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (previewAudioState.value.activeId == item.id) {
+                RingtoneAudioController.stopPreview()
+            }
+            RingtoneAudioController.deleteLocalRingtoneFile(appContext, item.uriString)
+            prefsManager.removeSavedRingtone(item.id)
+            _snackbarEvents.tryEmit("Removed ${item.name}")
+        }
+    }
+
+    fun previewRingtone(id: String, name: String, uri: String?) {
+        RingtoneAudioController.previewPlay(appContext, id, name, uri)
+    }
+
+    fun stopRingtonePreview() {
+        RingtoneAudioController.stopPreview()
+    }
+
+    fun testRingtoneAlert(name: String, uri: String?) {
+        val ok = RingtoneAudioController.startRinging(
+            context = appContext,
+            uriString = uri,
+            songName = name,
+            id = "test_ring_${System.currentTimeMillis()}",
+            title = "Ringtone Test",
+            isAlarm = true,
+            vibrate = false
+        )
+        if (!ok) {
+            _snackbarEvents.tryEmit("Unable to play ringtone.")
+        }
+    }
+
+    fun stopActiveRinging() {
+        RingtoneAudioController.stopRinging()
+    }
+
     fun setOfflineModePreferred(offline: Boolean) {
         viewModelScope.launch {
             prefsManager.setOfflineModePreferred(offline)
@@ -695,15 +800,31 @@ class MainViewModel(
 
     private fun postTimerFinishedNotification(label: String) {
         NotificationChannels.ensureCreated(appContext)
+        val prefs = preferences.value
+        val startedSong = if (!prefs.defaultRingtoneUri.isNullOrBlank()) {
+            RingtoneAudioController.startRinging(
+                context = appContext,
+                uriString = prefs.defaultRingtoneUri,
+                songName = prefs.defaultRingtoneName,
+                id = "timer_${System.currentTimeMillis()}",
+                title = "Timer Complete: $label",
+                isAlarm = false,
+                vibrate = true
+            )
+        } else {
+            false
+        }
         val nm = appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val notif = NotificationCompat.Builder(appContext, NotificationChannels.CHANNEL_TIMER)
+        val builder = NotificationCompat.Builder(appContext, NotificationChannels.CHANNEL_TIMER)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("RR Timer Complete")
             .setContentText(label)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .build()
-        nm.notify(label.hashCode(), notif)
+        if (startedSong) {
+            builder.setSilent(true)
+        }
+        nm.notify(label.hashCode(), builder.build())
         viewModelScope.launch {
             db.notificationLogDao().insert(
                 NotificationLogEntity(title = "Timer Complete", body = label, category = "TIMER")
@@ -917,6 +1038,7 @@ class MainViewModel(
         viewModelScope.launch {
             alarms.value.forEach { SystemSchedulers.cancelAlarm(appContext, it.id) }
             reminders.value.forEach { SystemSchedulers.cancelReminder(appContext, it.id) }
+            RingtoneAudioController.clearAllLocalRingtones(appContext)
             db.reminderDao().clearAll()
             db.calendarEventDao().clearAll()
             db.taskDao().clearAll()
@@ -947,6 +1069,7 @@ class MainViewModel(
             appContext.unregisterReceiver(batteryReceiver)
         } catch (_: Exception) {
         }
+        RingtoneAudioController.stopPreview()
         voiceRecorder.stopRecording()
         voiceRecorder.stopPlayback()
         super.onCleared()

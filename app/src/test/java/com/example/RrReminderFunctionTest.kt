@@ -1,17 +1,23 @@
 package com.example
 
+import com.example.data.local.AlarmEntity
+import com.example.data.local.ReminderEntity
+import com.example.data.prefs.AppUserPreferences
+import com.example.data.prefs.CustomRingtoneItem
 import com.example.data.prefs.DesignSettings
 import com.example.data.prefs.ThemePreset
 import com.example.data.remote.IndiaRegion
 import com.example.data.remote.IndiaWeatherDirectory
 import com.example.data.remote.WeatherRepository
 import com.example.security.SecurityManager
+import com.example.system.RingtoneAudioController
 import com.example.system.ScientificCalculatorEngine
 import com.example.system.SystemSchedulers
 import com.example.system.UnitConverterEngine
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
@@ -102,5 +108,41 @@ class RrReminderFunctionTest {
         assertTrue(defaults.isDarkMode)
         assertEquals(10, ThemePreset.entries.size)
         assertTrue(defaults.dashboardOrder.isNotEmpty())
+    }
+
+    @Test
+    fun ringtoneModels_formatDurationAndHoldCustomSongUri() {
+        assertEquals("Audio", RingtoneAudioController.formatDurationMs(0L))
+        assertEquals("0:45", RingtoneAudioController.formatDurationMs(45_000L))
+        assertEquals("3:15", RingtoneAudioController.formatDurationMs(195_000L))
+        assertTrue(RingtoneAudioController.builtInChimes.contains("System Default Alarm"))
+
+        val song = CustomRingtoneItem(
+            id = "song_1",
+            name = "Midnight Anthem",
+            artist = "Indie Band",
+            uriString = "file:///files/ringtones/song_1.mp3",
+            durationMs = 210_000L
+        )
+        val alarm = AlarmEntity(
+            hour = 6,
+            minute = 30,
+            label = "Wake Up",
+            soundType = song.name,
+            soundUri = song.uriString
+        )
+        val reminder = ReminderEntity(
+            title = "Workout",
+            triggerAtMillis = System.currentTimeMillis() + 60_000L,
+            soundName = song.name,
+            soundUri = song.uriString
+        )
+        val prefs = AppUserPreferences()
+
+        assertEquals(song.uriString, alarm.soundUri)
+        assertEquals(song.uriString, reminder.soundUri)
+        assertEquals("System Default Alarm", prefs.defaultRingtoneName)
+        assertNull(prefs.defaultRingtoneUri)
+        assertTrue(prefs.savedRingtones.isEmpty())
     }
 }

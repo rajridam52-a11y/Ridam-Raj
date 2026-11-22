@@ -13,6 +13,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "rr_reminder_prefs")
 
@@ -51,6 +53,9 @@ class PreferencesManager(private val context: Context) {
         val WEATHER_CITY = stringPreferencesKey("weather_city")
         val WEATHER_LAT = doublePreferencesKey("weather_lat")
         val WEATHER_LON = doublePreferencesKey("weather_lon")
+        val DEFAULT_RINGTONE_NAME = stringPreferencesKey("default_ringtone_name")
+        val DEFAULT_RINGTONE_URI = stringPreferencesKey("default_ringtone_uri")
+        val SAVED_RINGTONES_JSON = stringPreferencesKey("saved_ringtones_json")
     }
 
     val preferencesFlow: Flow<AppUserPreferences> = context.dataStore.data.map { p ->
@@ -111,7 +116,10 @@ class PreferencesManager(private val context: Context) {
             lastCloudBackupMillis = p[Keys.LAST_BACKUP] ?: 0L,
             weatherCityName = p[Keys.WEATHER_CITY] ?: "New Delhi",
             weatherLat = p[Keys.WEATHER_LAT] ?: 28.6139,
-            weatherLon = p[Keys.WEATHER_LON] ?: 77.2090
+            weatherLon = p[Keys.WEATHER_LON] ?: 77.2090,
+            defaultRingtoneName = p[Keys.DEFAULT_RINGTONE_NAME] ?: "System Default Alarm",
+            defaultRingtoneUri = p[Keys.DEFAULT_RINGTONE_URI]?.takeIf { it.isNotBlank() },
+            savedRingtones = decodeRingtones(p[Keys.SAVED_RINGTONES_JSON])
         )
     }
 
@@ -183,7 +191,88 @@ class PreferencesManager(private val context: Context) {
         }
     }
 
+    suspend fun setDefaultRingtone(name: String, uri: String?) {
+        context.dataStore.edit { p ->
+            p[Keys.DEFAULT_RINGTONE_NAME] = name.ifBlank { "System Default Alarm" }
+            if (uri.isNullOrBlank()) {
+                p.remove(Keys.DEFAULT_RINGTONE_URI)
+            } else {
+                p[Keys.DEFAULT_RINGTONE_URI] = uri
+            }
+        }
+    }
+
+    suspend fun addSavedRingtone(item: CustomRingtoneItem) {
+        context.dataStore.edit { p ->
+            val current = decodeRingtones(p[Keys.SAVED_RINGTONES_JSON])
+                .filterNot { it.id == item.id || it.uriString == item.uriString }
+            val updated = listOf(item) + current
+            p[Keys.SAVED_RINGTONES_JSON] = encodeRingtones(updated)
+        }
+    }
+
+    suspend fun removeSavedRingtone(id: String) {
+        context.dataStore.edit { p ->
+            val current = decodeRingtones(p[Keys.SAVED_RINGTONES_JSON])
+            val removed = current.firstOrNull { it.id == id }
+            val updated = current.filterNot { it.id == id }
+            p[Keys.SAVED_RINGTONES_JSON] = encodeRingtones(updated)
+            if (removed != null && p[Keys.DEFAULT_RINGTONE_URI] == removed.uriString) {
+                p[Keys.DEFAULT_RINGTONE_NAME] = "System Default Alarm"
+                p.remove(Keys.DEFAULT_RINGTONE_URI)
+            }
+        }
+    }
+
     suspend fun clearAllPreferences() {
         context.dataStore.edit { it.clear() }
+    }
+
+    companion object {
+        fun encodeRingtones(list: List<CustomRingtoneItem>): String {
+            val arr = JSONArray()
+            list.forEach { item ->
+                arr.put(
+                    JSONObject().apply {
+                        put("id", item.id)
+                        put("name", item.name)
+                        put("artist", item.artist)
+                        put("uriString", item.uriString)
+                        put("durationMs", item.durationMs)
+                        put("sourceType", item.sourceType)
+                        put("addedAtMillis", item.addedAtMillis)
+                    }
+                )
+            }
+            return arr.toString()
+        }
+
+        fun decodeRingtones(raw: String?): List<CustomRingtoneItem> {
+            if (raw.isNullOrBlank()) return emptyList()
+            return runCatching {
+                val arr = JSONArray(raw)
+                buildList {
+                    for (i in 0 until arr.length()) {
+                        val obj = arr.optJSONObject(i) ?: continue
+                        val id = obj.optString("id")
+                        val name = obj.optString("name")
+                        val uri = obj.optString("uriString")
+                        if (id.isNotBlank() && name.isNotBlank() && uri.isNotBlank()) {
+                            add(
+                                CustomRingtoneItem(
+                                    id = id,
+                                    name = name,
+                                    artist = obj.optString("artist", ""),
+                                    uriString = uri,
+                                    durationMs = obj.optLong("durationMs", 0L),
+                                    sourceType = obj.optString("sourceType", "SONG"),
+                                    addedAtMillis = obj.optLong("addedAtMillis", 0L)
+                                )
+                            )
+                        }
+                    }
+                }
+            }.getOrDefault(emptyList())
+        }
     }
 }

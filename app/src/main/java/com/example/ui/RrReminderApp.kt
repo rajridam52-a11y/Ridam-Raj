@@ -43,8 +43,12 @@ import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Dashboard
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Stop
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -76,6 +80,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import androidx.core.content.ContextCompat
@@ -112,12 +117,14 @@ import com.example.ui.screens.LocationRemindersScreen
 import com.example.ui.screens.NotesVoiceScreen
 import com.example.ui.screens.NotificationHubScreen
 import com.example.ui.screens.ProductivitySuiteScreen
+import com.example.ui.screens.RingtoneStudioScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.TasksScreen
 import com.example.ui.screens.ToolsHubScreen
 import com.example.ui.screens.WeatherScreen
 import com.example.ui.screens.WorldClockScreen
 import com.example.ui.theme.CreatorSignatureFooter
+import com.example.ui.theme.GlassCard
 import com.example.ui.theme.LocalRrColors
 import com.example.ui.theme.NebulaBackground
 import com.example.ui.theme.RrReminderTheme
@@ -192,6 +199,8 @@ fun RrReminderApp() {
     val cloudSyncState by viewModel.cloudSyncState.collectAsStateWithLifecycle()
     val cloudSummary by viewModel.cloudSummary.collectAsStateWithLifecycle()
     val conflictPolicy by viewModel.conflictPolicy.collectAsStateWithLifecycle()
+    val previewAudioState by viewModel.previewAudioState.collectAsStateWithLifecycle()
+    val ringingState by viewModel.ringingState.collectAsStateWithLifecycle()
 
     val credentialManager = remember(context) { CredentialManager.create(context) }
     val currentUser by Firebase.auth.authStateFlow().collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
@@ -403,11 +412,60 @@ fun RrReminderApp() {
                             }
                         }
 
-                        Box(modifier = Modifier.weight(1f).fillMaxSize()) {
-                            val animDuration = if (prefs.design.animationsEnabled) {
-                                (260f / prefs.design.animationSpeed.coerceIn(0.5f, 2.0f)).toInt()
-                            } else 0
-                            NavHost(
+                        Column(modifier = Modifier.weight(1f).fillMaxSize()) {
+                            val activeRing = ringingState
+                            AnimatedVisibility(visible = activeRing?.isRinging == true) {
+                                activeRing?.let { ring ->
+                                    GlassCard(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                                            .testTag("active_ringing_banner"),
+                                        contentPadding = 12.dp,
+                                        accentStripeColor = ext.glowPrimary
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.MusicNote,
+                                                contentDescription = "Now Ringing",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = ring.title,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "Playing ♪ ${ring.songName}",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Button(
+                                                onClick = viewModel::stopActiveRinging,
+                                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                                modifier = Modifier.testTag("stop_ringing_button")
+                                            ) {
+                                                Icon(Icons.Rounded.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                Text(" Stop")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Box(modifier = Modifier.weight(1f).fillMaxSize()) {
+                                val animDuration = if (prefs.design.animationsEnabled) {
+                                    (260f / prefs.design.animationSpeed.coerceIn(0.5f, 2.0f)).toInt()
+                                } else 0
+                                NavHost(
                                 navController = navController,
                                 startDestination = "home",
                                 enterTransition = {
@@ -578,8 +636,40 @@ fun RrReminderApp() {
                                         alarms = alarms,
                                         use24Hour = prefs.use24HourClock,
                                         defaultSnooze = prefs.defaultSnoozeMinutes,
+                                        defaultRingtoneName = prefs.defaultRingtoneName,
+                                        defaultRingtoneUri = prefs.defaultRingtoneUri,
+                                        savedRingtones = prefs.savedRingtones,
+                                        onImportSongForAlarm = { uri, onImported ->
+                                            viewModel.importSongRingtone(uri, setAsDefault = false, onImported = onImported)
+                                        },
+                                        onPreviewRingtone = viewModel::previewRingtone,
+                                        onStopPreview = viewModel::stopRingtonePreview,
+                                        onOpenRingtoneStudio = { navigateTo("ringtones") },
                                         onSaveAlarm = viewModel::saveAlarm,
                                         onDeleteAlarm = viewModel::deleteAlarm,
+                                        onBack = { navController.popBackStack() }
+                                    )
+                                }
+
+                                composable("ringtones") {
+                                    RingtoneStudioScreen(
+                                        defaultRingtoneName = prefs.defaultRingtoneName,
+                                        defaultRingtoneUri = prefs.defaultRingtoneUri,
+                                        savedRingtones = prefs.savedRingtones,
+                                        previewState = previewAudioState,
+                                        ringingState = ringingState,
+                                        onImportSong = { uri, makeDefault ->
+                                            viewModel.importSongRingtone(uri, setAsDefault = makeDefault)
+                                        },
+                                        onAddSystemRingtone = { uri, makeDefault ->
+                                            viewModel.addSystemRingtone(uri, setAsDefault = makeDefault)
+                                        },
+                                        onSetDefaultRingtone = viewModel::setDefaultRingtone,
+                                        onDeleteRingtone = viewModel::deleteSavedRingtone,
+                                        onPreviewRingtone = viewModel::previewRingtone,
+                                        onStopPreview = viewModel::stopRingtonePreview,
+                                        onTestRing = viewModel::testRingtoneAlert,
+                                        onStopRinging = viewModel::stopActiveRinging,
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
@@ -652,6 +742,14 @@ fun RrReminderApp() {
                                     LocationRemindersScreen(
                                         reminders = reminders,
                                         searchResults = citySearchResults,
+                                        defaultRingtoneName = prefs.defaultRingtoneName,
+                                        defaultRingtoneUri = prefs.defaultRingtoneUri,
+                                        savedRingtones = prefs.savedRingtones,
+                                        onImportSongForReminder = { uri, onImported ->
+                                            viewModel.importSongRingtone(uri, setAsDefault = false, onImported = onImported)
+                                        },
+                                        onPreviewRingtone = viewModel::previewRingtone,
+                                        onStopPreview = viewModel::stopRingtonePreview,
                                         onSearchPlace = viewModel::searchCities,
                                         onSaveReminder = viewModel::saveReminder,
                                         onDeleteReminder = viewModel::deleteReminder,
@@ -684,6 +782,7 @@ fun RrReminderApp() {
                                         onBack = { navController.popBackStack() }
                                     )
                                 }
+                            }
                             }
                         }
                     }

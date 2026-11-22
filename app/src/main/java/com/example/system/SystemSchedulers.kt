@@ -113,6 +113,8 @@ object SystemSchedulers {
                 putExtra(AlarmReceiver.EXTRA_TITLE, alarm.label.ifBlank { "RR Alarm" })
                 putExtra(AlarmReceiver.EXTRA_SNOOZE, alarm.snoozeMinutes)
                 putExtra(AlarmReceiver.EXTRA_VIBRATE, alarm.vibrate)
+                putExtra(AlarmReceiver.EXTRA_SOUND_NAME, alarm.soundType)
+                putExtra(AlarmReceiver.EXTRA_SOUND_URI, alarm.soundUri)
             }
         )
     }
@@ -143,6 +145,9 @@ object SystemSchedulers {
                 putExtra(AlarmReceiver.EXTRA_TITLE, reminder.title)
                 putExtra(AlarmReceiver.EXTRA_BODY, reminder.notes.ifBlank { reminder.category })
                 putExtra(AlarmReceiver.EXTRA_SNOOZE, reminder.snoozeMinutes)
+                putExtra(AlarmReceiver.EXTRA_VIBRATE, true)
+                putExtra(AlarmReceiver.EXTRA_SOUND_NAME, reminder.soundName)
+                putExtra(AlarmReceiver.EXTRA_SOUND_URI, reminder.soundUri)
             }
         )
     }

@@ -22,9 +22,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Cake
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Delete
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.LocalFireDepartment
 import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.Mic
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PushPin
@@ -74,6 +78,7 @@ import com.example.data.local.HabitEntity
 import com.example.data.local.NoteEntity
 import com.example.data.local.ReminderEntity
 import com.example.data.local.TaskEntity
+import com.example.data.prefs.CustomRingtoneItem
 import com.example.data.remote.GeocodingResultDto
 import com.example.system.VoiceNoteRecorder
 import com.example.ui.theme.GlassCard
@@ -716,16 +721,26 @@ fun NotesVoiceScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun LocationRemindersScreen(
     reminders: List<ReminderEntity>,
     searchResults: List<GeocodingResultDto>,
+    defaultRingtoneName: String,
+    defaultRingtoneUri: String?,
+    savedRingtones: List<CustomRingtoneItem>,
+    onImportSongForReminder: (Uri, (CustomRingtoneItem) -> Unit) -> Unit,
+    onPreviewRingtone: (String, String, String?) -> Unit,
+    onStopPreview: () -> Unit,
     onSearchPlace: (String) -> Unit,
     onSaveReminder: (ReminderEntity) -> Unit,
     onDeleteReminder: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
+    BackHandler(onBack = {
+        onStopPreview()
+        onBack()
+    })
     val context = LocalContext.current
     var showAdd by remember { mutableStateOf(false) }
 
@@ -737,7 +752,14 @@ fun LocationRemindersScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            SubScreenTopBar("Smart Reminders", "Time & Geofence Alerts", onBack) {
+            SubScreenTopBar(
+                title = "Smart Reminders",
+                subtitle = "Time & Geofence Alerts",
+                onBack = {
+                    onStopPreview()
+                    onBack()
+                }
+            ) {
                 Button(onClick = { showAdd = true }) {
                     Icon(Icons.Rounded.Add, contentDescription = null)
                     Text(" Add")
@@ -786,6 +808,9 @@ fun LocationRemindersScreen(
                         if (!rem.locationName.isNullOrBlank()) {
                             Text("Location: ${rem.locationName} (${rem.radiusMeters}m)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                         }
+                        if (!rem.soundUri.isNullOrBlank() || rem.soundName != "Default") {
+                            Text("Ringtone: ♪ ${rem.soundName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     IconButton(onClick = { onDeleteReminder(rem.id) }) {
                         Icon(Icons.Rounded.Delete, contentDescription = "Delete reminder", tint = MaterialTheme.colorScheme.error)
@@ -800,17 +825,38 @@ fun LocationRemindersScreen(
         var minsFromNow by remember { mutableStateOf("30") }
         var placeQuery by remember { mutableStateOf("") }
         var selectedPlace by remember { mutableStateOf<GeocodingResultDto?>(null) }
+        var soundName by remember { mutableStateOf(defaultRingtoneName) }
+        var soundUri by remember { mutableStateOf(defaultRingtoneUri) }
+        var isPreviewing by remember { mutableStateOf(false) }
+
+        val pickSongLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                onImportSongForReminder(uri) { imported ->
+                    soundName = imported.name
+                    soundUri = imported.uriString
+                }
+            }
+        }
+
         AlertDialog(
-            onDismissRequest = { showAdd = false },
+            onDismissRequest = {
+                onStopPreview()
+                showAdd = false
+            },
             title = { Text("Create Reminder") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("Reminder Title") })
                     OutlinedTextField(value = minsFromNow, onValueChange = { minsFromNow = it.filter { c -> c.isDigit() } }, label = { Text("Trigger in (minutes)") })
                     OutlinedTextField(
                         value = placeQuery,
                         onValueChange = { placeQuery = it; onSearchPlace(it) },
-                        label = { Text("Optional Location (e.g., London, School)") }
+                        label = { Text("Optional Location (e.g., Delhi, Office)") }
                     )
                     if (placeQuery.length >= 2 && searchResults.isNotEmpty() && selectedPlace == null) {
                         searchResults.take(3).forEach { p ->
@@ -819,10 +865,60 @@ fun LocationRemindersScreen(
                             }
                         }
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Alert Ringtone", style = MaterialTheme.typography.labelLarge)
+                            Text("♪ $soundName", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = {
+                            if (isPreviewing) {
+                                onStopPreview()
+                                isPreviewing = false
+                            } else {
+                                onPreviewRingtone("rem_dialog_preview", soundName, soundUri)
+                                isPreviewing = true
+                            }
+                        }) {
+                            Icon(
+                                imageVector = if (isPreviewing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                contentDescription = if (isPreviewing) "Stop preview" else "Preview ringtone",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { pickSongLauncher.launch(arrayOf("audio/*")) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Pick Any Song as Ringtone")
+                    }
+                    if (savedRingtones.isNotEmpty()) {
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(
+                                selected = soundUri == null && soundName == "Default",
+                                onClick = { soundName = "Default"; soundUri = null },
+                                label = { Text("Default") }
+                            )
+                            savedRingtones.forEach { song ->
+                                FilterChip(
+                                    selected = soundUri == song.uriString,
+                                    onClick = { soundName = song.name; soundUri = song.uriString },
+                                    label = { Text("♪ ${song.name}") }
+                                )
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = {
                 Button(enabled = title.isNotBlank(), onClick = {
+                    onStopPreview()
                     val mins = (minsFromNow.toIntOrNull() ?: 30).coerceAtLeast(1)
                     val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
                     if (selectedPlace != null && !granted) {
@@ -834,13 +930,20 @@ fun LocationRemindersScreen(
                             triggerAtMillis = System.currentTimeMillis() + mins * 60_000L,
                             locationName = selectedPlace?.name ?: placeQuery.takeIf { it.isNotBlank() },
                             latitude = selectedPlace?.latitude,
-                            longitude = selectedPlace?.longitude
+                            longitude = selectedPlace?.longitude,
+                            soundName = soundName,
+                            soundUri = soundUri
                         )
                     )
                     showAdd = false
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = {
+                    onStopPreview()
+                    showAdd = false
+                }) { Text("Cancel") }
+            }
         )
     }
 }

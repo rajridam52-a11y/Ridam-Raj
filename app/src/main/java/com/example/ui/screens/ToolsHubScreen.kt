@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.EditNote
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.LocationOn
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Public
@@ -78,6 +79,7 @@ fun ToolsHubScreen(
         ToolTile("timer", "Time Studio", "Pomodoro • Laps", Icons.Rounded.Timer, ElectricCyan)
     )
     val tools = listOf(
+        ToolTile("ringtones", "Song Ringtones", "Any song alert", Icons.Rounded.MusicNote, AuroraMagenta),
         ToolTile("world_clock", "World Clock", "Global zones", Icons.Rounded.Public, NeonBlue),
         ToolTile("weather", "Live Weather", "7-day • AQI", Icons.Rounded.WbSunny, WarningAmber),
         ToolTile("tasks", "Task Manager", "$taskCount pending", Icons.Rounded.CheckCircle, SuccessMint),

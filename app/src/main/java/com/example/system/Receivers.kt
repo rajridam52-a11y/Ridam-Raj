@@ -13,10 +13,12 @@ import com.example.MainActivity
 import com.example.R
 import com.example.data.local.AppDatabase
 import com.example.data.local.NotificationLogEntity
+import com.example.data.prefs.PreferencesManager
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class AlarmReceiver : BroadcastReceiver() {
@@ -27,64 +29,104 @@ class AlarmReceiver : BroadcastReceiver() {
         val title = intent.getStringExtra(EXTRA_TITLE) ?: "RR Reminder"
         val body = intent.getStringExtra(EXTRA_BODY) ?: if (type == "ALARM") "Alarm ringing" else "Scheduled reminder"
         val snoozeMins = intent.getIntExtra(EXTRA_SNOOZE, 10)
+        val vibrate = intent.getBooleanExtra(EXTRA_VIBRATE, true)
+        val extraSoundUri = intent.getStringExtra(EXTRA_SOUND_URI)
+        val extraSoundName = intent.getStringExtra(EXTRA_SOUND_NAME)
 
         val channelId = if (type == "ALARM") NotificationChannels.CHANNEL_ALARM else NotificationChannels.CHANNEL_REMINDER
-
-        val openIntent = PendingIntent.getActivity(
-            context,
-            id.hashCode(),
-            Intent(context, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val snoozeIntent = PendingIntent.getBroadcast(
-            context,
-            (id + "_snooze").hashCode(),
-            Intent(context, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_SNOOZE
-                putExtra(EXTRA_ID, id)
-                putExtra(EXTRA_TITLE, title)
-                putExtra(EXTRA_TYPE, type)
-                putExtra(EXTRA_SNOOZE, snoozeMins)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val completeIntent = PendingIntent.getBroadcast(
-            context,
-            (id + "_done").hashCode(),
-            Intent(context, NotificationActionReceiver::class.java).apply {
-                action = NotificationActionReceiver.ACTION_COMPLETE
-                putExtra(EXTRA_ID, id)
-                putExtra(EXTRA_TYPE, type)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(if (type == "ALARM") NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
-            .setAutoCancel(true)
-            .setContentIntent(openIntent)
-            .addAction(0, "Snooze ${snoozeMins}m", snoozeIntent)
-            .addAction(0, if (type == "ALARM") "Dismiss" else "Complete", completeIntent)
-            .build()
-
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(id.hashCode(), notification)
+        val isAlarm = type == "ALARM"
 
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                val prefs = runCatching { PreferencesManager(context).preferencesFlow.first() }.getOrNull()
+                val effectiveUri = extraSoundUri?.takeIf { it.isNotBlank() } ?: prefs?.defaultRingtoneUri
+                val effectiveName = extraSoundName?.takeIf { it.isNotBlank() } ?: prefs?.defaultRingtoneName ?: "System Default"
+
+                val customSongStarted = if (!effectiveUri.isNullOrBlank() || isAlarm) {
+                    RingtoneAudioController.startRinging(
+                        context = context,
+                        uriString = effectiveUri,
+                        songName = effectiveName,
+                        id = id,
+                        title = title,
+                        isAlarm = isAlarm,
+                        vibrate = vibrate
+                    )
+                } else {
+                    false
+                }
+
+                val openIntent = PendingIntent.getActivity(
+                    context,
+                    id.hashCode(),
+                    Intent(context, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val snoozeIntent = PendingIntent.getBroadcast(
+                    context,
+                    (id + "_snooze").hashCode(),
+                    Intent(context, NotificationActionReceiver::class.java).apply {
+                        action = NotificationActionReceiver.ACTION_SNOOZE
+                        putExtra(EXTRA_ID, id)
+                        putExtra(EXTRA_TITLE, title)
+                        putExtra(EXTRA_TYPE, type)
+                        putExtra(EXTRA_SNOOZE, snoozeMins)
+                        putExtra(EXTRA_SOUND_URI, effectiveUri)
+                        putExtra(EXTRA_SOUND_NAME, effectiveName)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val completeIntent = PendingIntent.getBroadcast(
+                    context,
+                    (id + "_done").hashCode(),
+                    Intent(context, NotificationActionReceiver::class.java).apply {
+                        action = NotificationActionReceiver.ACTION_COMPLETE
+                        putExtra(EXTRA_ID, id)
+                        putExtra(EXTRA_TYPE, type)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val dismissDeleteIntent = PendingIntent.getBroadcast(
+                    context,
+                    (id + "_dismiss_swipe").hashCode(),
+                    Intent(context, NotificationActionReceiver::class.java).apply {
+                        action = NotificationActionReceiver.ACTION_DISMISS_RINGING
+                        putExtra(EXTRA_ID, id)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+
+                val notifBuilder = NotificationCompat.Builder(context, channelId)
+                    .setSmallIcon(R.mipmap.ic_launcher)
+                    .setContentTitle(title)
+                    .setContentText(
+                        if (!effectiveUri.isNullOrBlank()) "$body • ♪ $effectiveName" else body
+                    )
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setCategory(if (isAlarm) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_REMINDER)
+                    .setAutoCancel(true)
+                    .setContentIntent(openIntent)
+                    .setDeleteIntent(dismissDeleteIntent)
+                    .addAction(0, "Snooze ${snoozeMins}m", snoozeIntent)
+                    .addAction(0, if (isAlarm) "Dismiss" else "Complete", completeIntent)
+
+                if (customSongStarted) {
+                    notifBuilder.setSilent(true)
+                }
+
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(id.hashCode(), notifBuilder.build())
+
                 AppDatabase.getInstance(context).notificationLogDao().insert(
                     NotificationLogEntity(
                         title = title,
-                        body = body,
+                        body = if (!effectiveUri.isNullOrBlank()) "$body (♪ $effectiveName)" else body,
                         category = type
                     )
                 )
@@ -101,11 +143,14 @@ class AlarmReceiver : BroadcastReceiver() {
         const val EXTRA_BODY = "extra_body"
         const val EXTRA_SNOOZE = "extra_snooze"
         const val EXTRA_VIBRATE = "extra_vibrate"
+        const val EXTRA_SOUND_URI = "extra_sound_uri"
+        const val EXTRA_SOUND_NAME = "extra_sound_name"
     }
 }
 
 class NotificationActionReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
+        RingtoneAudioController.stopRinging()
         val id = intent.getStringExtra(AlarmReceiver.EXTRA_ID) ?: return
         val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.cancel(id.hashCode())
@@ -115,6 +160,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 val mins = intent.getIntExtra(AlarmReceiver.EXTRA_SNOOZE, 10)
                 val title = intent.getStringExtra(AlarmReceiver.EXTRA_TITLE) ?: "RR Reminder"
                 val type = intent.getStringExtra(AlarmReceiver.EXTRA_TYPE) ?: "REMINDER"
+                val soundUri = intent.getStringExtra(AlarmReceiver.EXTRA_SOUND_URI)
+                val soundName = intent.getStringExtra(AlarmReceiver.EXTRA_SOUND_NAME)
                 val triggerAt = System.currentTimeMillis() + mins * 60_000L
                 val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
                 val pi = PendingIntent.getBroadcast(
@@ -125,6 +172,8 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         putExtra(AlarmReceiver.EXTRA_TITLE, "$title (Snoozed)")
                         putExtra(AlarmReceiver.EXTRA_TYPE, type)
                         putExtra(AlarmReceiver.EXTRA_SNOOZE, mins)
+                        putExtra(AlarmReceiver.EXTRA_SOUND_URI, soundUri)
+                        putExtra(AlarmReceiver.EXTRA_SOUND_NAME, soundName)
                     },
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
@@ -155,12 +204,14 @@ class NotificationActionReceiver : BroadcastReceiver() {
                     }
                 }
             }
+            ACTION_DISMISS_RINGING -> Unit
         }
     }
 
     companion object {
         const val ACTION_SNOOZE = "com.example.ACTION_SNOOZE"
         const val ACTION_COMPLETE = "com.example.ACTION_COMPLETE"
+        const val ACTION_DISMISS_RINGING = "com.example.ACTION_DISMISS_RINGING"
     }
 }
 

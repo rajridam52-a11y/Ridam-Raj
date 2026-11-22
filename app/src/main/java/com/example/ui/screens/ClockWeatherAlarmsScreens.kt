@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,11 +25,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.AudioFile
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NightsStay
 import androidx.compose.material.icons.rounded.Pause
@@ -37,6 +43,7 @@ import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
@@ -71,6 +78,7 @@ import androidx.core.content.ContextCompat
 import com.example.data.local.AlarmEntity
 import com.example.data.local.PomodoroSessionEntity
 import com.example.data.local.WorldCityEntity
+import com.example.data.prefs.CustomRingtoneItem
 import com.example.data.remote.GeocodingResultDto
 import com.example.data.remote.IndiaRegion
 import com.example.data.remote.IndiaWeatherDirectory
@@ -615,12 +623,23 @@ fun AlarmsScreen(
     alarms: List<AlarmEntity>,
     use24Hour: Boolean,
     defaultSnooze: Int,
+    defaultRingtoneName: String,
+    defaultRingtoneUri: String?,
+    savedRingtones: List<CustomRingtoneItem>,
+    onImportSongForAlarm: (Uri, (CustomRingtoneItem) -> Unit) -> Unit,
+    onPreviewRingtone: (String, String, String?) -> Unit,
+    onStopPreview: () -> Unit,
+    onOpenRingtoneStudio: () -> Unit,
     onSaveAlarm: (AlarmEntity) -> Unit,
     onDeleteAlarm: (String) -> Unit,
     onBack: () -> Unit
 ) {
-    BackHandler(onBack = onBack)
-    var showAdd by remember { mutableStateOf(false) }
+    BackHandler(onBack = {
+        onStopPreview()
+        onBack()
+    })
+    var showEditor by remember { mutableStateOf(false) }
+    var editingAlarm by remember { mutableStateOf<AlarmEntity?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -628,10 +647,31 @@ fun AlarmsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            SubScreenTopBar("Advanced Alarms", "AlarmManager Scheduled", onBack) {
-                Button(onClick = { showAdd = true }, modifier = Modifier.testTag("alarm_add_button")) {
-                    Icon(Icons.Rounded.Add, contentDescription = null)
-                    Text(" Add")
+            SubScreenTopBar(
+                title = "Advanced Alarms",
+                subtitle = "AlarmManager • ♪ $defaultRingtoneName",
+                onBack = {
+                    onStopPreview()
+                    onBack()
+                }
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(
+                        onClick = onOpenRingtoneStudio,
+                        modifier = Modifier.testTag("alarm_ringtones_button")
+                    ) {
+                        Icon(Icons.Rounded.MusicNote, contentDescription = "Song Ringtones", modifier = Modifier.size(18.dp))
+                    }
+                    Button(
+                        onClick = {
+                            editingAlarm = null
+                            showEditor = true
+                        },
+                        modifier = Modifier.testTag("alarm_add_button")
+                    ) {
+                        Icon(Icons.Rounded.Add, contentDescription = null)
+                        Text(" Add")
+                    }
                 }
             }
         }
@@ -641,9 +681,12 @@ fun AlarmsScreen(
                 PremiumEmptyState(
                     icon = Icons.Rounded.Alarm,
                     title = "No Alarms Scheduled",
-                    subtitle = "Create a recurring wake-up or custom sound alarm using Android's exact scheduler.",
+                    subtitle = "Create a recurring wake-up or custom song alarm using Android's exact scheduler.",
                     actionLabel = "Add Alarm",
-                    onAction = { showAdd = true }
+                    onAction = {
+                        editingAlarm = null
+                        showEditor = true
+                    }
                 )
             }
         }
@@ -661,7 +704,11 @@ fun AlarmsScreen(
 
             GlassCard(
                 modifier = Modifier.fillMaxWidth(),
-                accentStripeColor = if (alarm.enabled) MaterialTheme.colorScheme.primary else null
+                accentStripeColor = if (alarm.enabled) MaterialTheme.colorScheme.primary else null,
+                onClick = {
+                    editingAlarm = alarm
+                    showEditor = true
+                }
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -673,7 +720,7 @@ fun AlarmsScreen(
                         Text(alarm.label, style = MaterialTheme.typography.titleMedium)
                         Text(
                             text = (if (activeDays.isEmpty()) "One-time" else activeDays.joinToString(", ")) +
-                                " • Snooze ${alarm.snoozeMinutes}m • ${alarm.soundType}",
+                                " • Snooze ${alarm.snoozeMinutes}m • ♪ ${alarm.soundType}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -683,8 +730,16 @@ fun AlarmsScreen(
                             checked = alarm.enabled,
                             onCheckedChange = { onSaveAlarm(alarm.copy(enabled = it)) }
                         )
-                        IconButton(onClick = { onDeleteAlarm(alarm.id) }) {
-                            Icon(Icons.Rounded.Delete, contentDescription = "Delete alarm", tint = MaterialTheme.colorScheme.error)
+                        Row {
+                            IconButton(onClick = {
+                                editingAlarm = alarm
+                                showEditor = true
+                            }) {
+                                Icon(Icons.Rounded.Edit, contentDescription = "Edit alarm")
+                            }
+                            IconButton(onClick = { onDeleteAlarm(alarm.id) }) {
+                                Icon(Icons.Rounded.Delete, contentDescription = "Delete alarm", tint = MaterialTheme.colorScheme.error)
+                            }
                         }
                     }
                 }
@@ -692,24 +747,44 @@ fun AlarmsScreen(
         }
     }
 
-    if (showAdd) {
-        var hourStr by remember { mutableStateOf("07") }
-        var minStr by remember { mutableStateOf("00") }
-        var label by remember { mutableStateOf("Morning Alarm") }
-        var daysMask by remember { mutableIntStateOf(0) }
-        var vibrate by remember { mutableStateOf(true) }
-        var soundType by remember { mutableStateOf("Cosmic Chime") }
+    if (showEditor) {
+        val initial = editingAlarm
+        var hourStr by remember(initial) { mutableStateOf(String.format(Locale.US, "%02d", initial?.hour ?: 7)) }
+        var minStr by remember(initial) { mutableStateOf(String.format(Locale.US, "%02d", initial?.minute ?: 0)) }
+        var label by remember(initial) { mutableStateOf(initial?.label ?: "Morning Alarm") }
+        var daysMask by remember(initial) { mutableIntStateOf(initial?.repeatDaysMask ?: 0) }
+        var vibrate by remember(initial) { mutableStateOf(initial?.vibrate ?: true) }
+        var soundType by remember(initial) { mutableStateOf(initial?.soundType ?: defaultRingtoneName) }
+        var soundUri by remember(initial) { mutableStateOf(initial?.soundUri ?: defaultRingtoneUri) }
+        var isPreviewing by remember { mutableStateOf(false) }
+
+        val songPicker = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { pickedUri ->
+            if (pickedUri != null) {
+                onImportSongForAlarm(pickedUri) { imported ->
+                    soundType = imported.name
+                    soundUri = imported.uriString
+                }
+            }
+        }
 
         AlertDialog(
-            onDismissRequest = { showAdd = false },
-            title = { Text("Create Alarm") },
+            onDismissRequest = {
+                onStopPreview()
+                showEditor = false
+            },
+            title = { Text(if (initial == null) "Create Alarm" else "Edit Alarm") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(value = hourStr, onValueChange = { hourStr = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Hour (0-23)") }, modifier = Modifier.weight(1f))
                         OutlinedTextField(value = minStr, onValueChange = { minStr = it.filter { c -> c.isDigit() }.take(2) }, label = { Text("Minute") }, modifier = Modifier.weight(1f))
                     }
-                    OutlinedTextField(value = label, onValueChange = { label = it }, label = { Text("Label") }, singleLine = true)
+                    OutlinedTextField(value = label, onValueChange = { label = it }, label = { Text("Label") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Text("Repeat Days", style = MaterialTheme.typography.labelLarge)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         listOf("S", "M", "T", "W", "T", "F", "S").forEachIndexed { idx, d ->
@@ -725,17 +800,85 @@ fun AlarmsScreen(
                         Text("Vibrate")
                         Switch(checked = vibrate, onCheckedChange = { vibrate = it })
                     }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Ringtone / Song", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "♪ $soundType",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                if (isPreviewing) {
+                                    onStopPreview()
+                                    isPreviewing = false
+                                } else {
+                                    onPreviewRingtone("alarm_dialog_preview", soundType, soundUri)
+                                    isPreviewing = true
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isPreviewing) Icons.Rounded.Stop else Icons.Rounded.PlayArrow,
+                                contentDescription = if (isPreviewing) "Stop preview" else "Preview sound",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { songPicker.launch(arrayOf("audio/*")) },
+                        modifier = Modifier.fillMaxWidth().testTag("alarm_pick_song_button")
+                    ) {
+                        Icon(Icons.Rounded.AudioFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Choose Any Song From Device")
+                    }
+                    if (savedRingtones.isNotEmpty()) {
+                        Text("My Songs", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            savedRingtones.forEach { song ->
+                                FilterChip(
+                                    selected = soundUri == song.uriString,
+                                    onClick = {
+                                        soundType = song.name
+                                        soundUri = song.uriString
+                                    },
+                                    label = { Text("♪ ${song.name}") }
+                                )
+                            }
+                        }
+                    }
+                    Text("Built-in Chimes", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("Cosmic Chime", "Aurora Bell", "Gentle Pulse").forEach { s ->
-                            FilterChip(selected = soundType == s, onClick = { soundType = s }, label = { Text(s) })
+                        listOf("System Default Alarm", "Cosmic Chime", "Aurora Bell", "Gentle Pulse").forEach { s ->
+                            FilterChip(
+                                selected = soundUri == null && soundType == s,
+                                onClick = {
+                                    soundType = s
+                                    soundUri = null
+                                },
+                                label = { Text(s) }
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
                 Button(onClick = {
+                    onStopPreview()
+                    val base = initial ?: AlarmEntity(
+                        hour = 7,
+                        minute = 0,
+                        snoozeMinutes = defaultSnooze
+                    )
                     onSaveAlarm(
-                        AlarmEntity(
+                        base.copy(
                             hour = (hourStr.toIntOrNull() ?: 7).coerceIn(0, 23),
                             minute = (minStr.toIntOrNull() ?: 0).coerceIn(0, 59),
                             label = label.ifBlank { "Alarm" },
@@ -743,13 +886,19 @@ fun AlarmsScreen(
                             enabled = true,
                             vibrate = vibrate,
                             soundType = soundType,
-                            snoozeMinutes = defaultSnooze
+                            soundUri = soundUri,
+                            snoozeMinutes = base.snoozeMinutes
                         )
                     )
-                    showAdd = false
+                    showEditor = false
                 }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Cancel") } }
+            dismissButton = {
+                TextButton(onClick = {
+                    onStopPreview()
+                    showEditor = false
+                }) { Text("Cancel") }
+            }
         )
     }
 }

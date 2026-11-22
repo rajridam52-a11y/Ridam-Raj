@@ -19,6 +19,7 @@ data class ReminderEntity(
     val isCompleted: Boolean = false,
     val priority: String = "MEDIUM", // LOW, MEDIUM, HIGH
     val soundName: String = "Default",
+    val soundUri: String? = null,
     val snoozeMinutes: Int = 10,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis()
@@ -64,6 +65,7 @@ data class AlarmEntity(
     val enabled: Boolean = true,
     val vibrate: Boolean = true,
     val soundType: String = "Cosmic Chime",
+    val soundUri: String? = null,
     val snoozeMinutes: Int = 10,
     val createdAtMillis: Long = System.currentTimeMillis(),
     val updatedAtMillis: Long = System.currentTimeMillis()
